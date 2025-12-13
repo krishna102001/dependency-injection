@@ -3,18 +3,27 @@ package services
 import (
 	"log/slog"
 
-	"go.mongodb.org/mongo-driver/v2/mongo"
+	"github.com/go-chi/chi/v5"
 )
 
-type Service struct {
-	db     *mongo.Client
-	logger *slog.Logger
+type AuthRepository interface {
 }
 
-func NewService(conn *mongo.Client, logger *slog.Logger) *Service {
+type Service struct {
+	db     AuthRepository
+	logger *slog.Logger
+	router *chi.Mux
+}
 
+func NewService(conn AuthRepository, logger *slog.Logger) *Service {
+	r := chi.NewMux()
 	return &Service{
 		db:     conn,
 		logger: logger,
+		router: r,
 	}
+}
+
+func (s *Service) GetServiceMux() *chi.Mux {
+	return s.router
 }
