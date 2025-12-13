@@ -46,12 +46,12 @@ func loadEnv() {
 }
 
 func setupService(cfg *config.Config, logger *slog.Logger) *services.Service {
-	conn, err := database.InitMongo(logger)
+	authDB, err := database.GetMongoDB(logger)
 	if err != nil {
 		logger.Error("failed to intialized the database")
 		log.Fatal("failed to init mongo")
 	}
-	service := services.NewService(conn, logger)
+	service := services.NewService(authDB, logger)
 	return service
 }
 

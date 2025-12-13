@@ -2,23 +2,31 @@ package database
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log"
 	"log/slog"
 
 	"github.com/krishna102001/dependecy-injection/config"
+	"github.com/krishna102001/dependecy-injection/internal/models"
+	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
-func InitMongo(logger *slog.Logger) (*mongo.Client, error) {
+type AuthDB struct {
+	dbName      string
+	mongoURI    string
+	usersColl   string
+	mongoClient *mongo.Client
+	logger      *slog.Logger
+}
+
+func GetMongoDB(logger *slog.Logger) (*AuthDB, error) {
 	cfg, err := config.GetConfig()
-	if err != nil {
+	if err != nil || cfg.Mongo == nil {
 		logger.Warn("config is not loaded", "error", err)
 		return nil, fmt.Errorf("config is not loaded")
-	}
-	if cfg.Mongo == nil || cfg.Mongo.URI == "" || cfg.Mongo.DBName == "" || cfg.Mongo.Collection == "" {
-		logger.Error("failed to get the config value of mongo")
-		return nil, fmt.Errorf("config value is empty")
 	}
 
 	client, err := mongo.Connect(options.Client().ApplyURI(cfg.Mongo.URI))
@@ -34,5 +42,40 @@ func InitMongo(logger *slog.Logger) (*mongo.Client, error) {
 
 	logger.Info("Mongodb connected successfull")
 
-	return client, nil
+	return &AuthDB{
+		dbName:      cfg.Mongo.DBName,
+		mongoURI:    cfg.Mongo.URI,
+		usersColl:   cfg.Mongo.Collection,
+		mongoClient: client,
+		logger:      logger,
+	}, nil
+}
+
+func (db *AuthDB) GetUserCollection() *mongo.Collection {
+	return db.mongoClient.Database(db.dbName).Collection(db.usersColl)
+}
+
+func (db *AuthDB) GetUserByEmail(ctx context.Context, email string) (*models.User, error) {
+	coll := db.GetUserCollection()
+
+	result := coll.FindOne(ctx, bson.M{"email": email})
+	var user models.User
+	if err := result.Decode(&user); err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, models.ErrNoDataFound
+		}
+		return nil, fmt.Errorf("failed to decode the user data %w", err)
+	}
+	log.Printf("user %+v", user)
+	return &user, nil
+}
+
+func (db *AuthDB) InsertUser(ctx context.Context, user models.User) (string, error) {
+	coll := db.GetUserCollection()
+
+	result, err := coll.InsertOne(ctx, user)
+	if err != nil {
+		return "", fmt.Errorf("failed to insert user in db %v", err)
+	}
+	return result.InsertedID.(bson.ObjectID).Hex(), nil
 }

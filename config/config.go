@@ -24,7 +24,7 @@ type ServerConfig struct {
 type MongoConfig struct {
 	URI        string `yaml:"uri"`
 	DBName     string `yaml:"dbName"`
-	Collection string `yaml:"collection"`
+	Collection string `yaml:"collName"`
 }
 
 // config going to store the since its small because i don't want to expose it to other packages

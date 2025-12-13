@@ -9,11 +9,13 @@ import (
 	"github.com/krishna102001/dependecy-injection/internal/handlers"
 )
 
-func SetupRoutes(hd *handlers.Handler, logger *slog.Logger, r *chi.Mux) http.Handler {
+func SetupRoutes(handler *handlers.Handler, logger *slog.Logger, r *chi.Mux) http.Handler {
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
 
-	// r.Get("/",hd)
+	r.Get("/", handler.GetPlainText)
+
+	r.Post("/", handler.RegisterHandler)
 
 	return r
 }
