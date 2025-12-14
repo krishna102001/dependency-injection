@@ -2,13 +2,16 @@ package middlewares
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/krishna102001/dependecy-injection/internal/tokens"
+	"github.com/krishna102001/dependecy-injection/internal/utils"
 )
 
 type contextKey string
@@ -29,6 +32,7 @@ func IsAuthenticated(logger *slog.Logger) func(http.Handler) http.Handler {
 			claims, err := tokens.VerifyToken(tokenString)
 			if err != nil && !errors.Is(err, jwt.ErrTokenExpired) {
 				logger.Error("token is compromised", "error", err)
+				checkToRedirect(w, r, next)
 				return
 			}
 			if err != nil && errors.Is(err, jwt.ErrTokenExpired) {
@@ -39,7 +43,7 @@ func IsAuthenticated(logger *slog.Logger) func(http.Handler) http.Handler {
 
 			userId, err := claims.GetSubject()
 			if err != nil {
-				http.Error(w, err.Error(), http.StatusUnauthorized)
+				utils.JsonError(w, http.StatusUnauthorized, err.Error())
 				return
 			}
 
@@ -55,27 +59,34 @@ func refreshAccessToken(w http.ResponseWriter, r *http.Request, next http.Handle
 	refreshToken := getToken(r, "refresh_token")
 	if refreshToken == "" {
 		logger.Info("refresh token not found")
-		// checkToRedirect(w, r, next)
-		http.Error(w, "both token not found", http.StatusUnauthorized)
+		checkToRedirect(w, r, next)
 		return
 	}
 
 	claims, err := tokens.VerifyToken(refreshToken)
 	if err != nil {
 		logger.Error("error verifying refresh token", "err", err)
+		checkToRedirect(w, r, next)
 		return
 	}
 
-	userId := claims["sub"].(string)
-	newAccesstoken, err := tokens.CreateAccessToken(userId)
+	uid, err := claims.GetSubject()
+	if err != nil {
+		writeJsonError(w, http.StatusUnauthorized, err.Error())
+		return
+	}
+
+	newAccesstoken, err := tokens.CreateAccessToken(uid)
 	if err != nil {
 		logger.Error("error to create the access token", "error", err)
+		checkToRedirect(w, r, next)
 		return
 	}
 
-	newRefreshToken, err := tokens.CreateRefreshToken(userId)
+	newRefreshToken, err := tokens.CreateRefreshToken(uid)
 	if err != nil {
 		logger.Error("error to create the refresh token", "error", err)
+		checkToRedirect(w, r, next)
 		return
 	}
 
@@ -91,20 +102,47 @@ func refreshAccessToken(w http.ResponseWriter, r *http.Request, next http.Handle
 	http.SetCookie(w, &http.Cookie{
 		Name:     "refresh_token",
 		Value:    newRefreshToken,
-		Expires:  time.Now().Add(1 * time.Minute),
+		Expires:  time.Now().Add(2 * time.Minute),
 		Path:     "/",
 		HttpOnly: true,
 		SameSite: http.SameSiteNoneMode,
 	})
 
-	uid, err := claims.GetSubject()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusUnauthorized)
-		return
-	}
-
 	ctx := context.WithValue(r.Context(), userKey, uid)
 	next.ServeHTTP(w, r.WithContext(ctx))
+}
+
+func redirectToLogin(w http.ResponseWriter, r *http.Request) {
+	_, err := r.Cookie("temp_auth_cookie")
+	if err != nil {
+		http.SetCookie(w, &http.Cookie{
+			Name:     "temp_auth_cookie",
+			Value:    "true",
+			Expires:  time.Now().Add(5 * time.Minute),
+			HttpOnly: true,
+			Path:     "/",
+			SameSite: http.SameSiteNoneMode,
+		})
+	}
+
+	w.WriteHeader(http.StatusUnauthorized)
+}
+
+func checkToRedirect(w http.ResponseWriter, r *http.Request, next http.Handler) {
+	if !strings.Contains(r.URL.Path, "/login") || !strings.Contains(r.URL.Path, "/register") {
+		redirectToLogin(w, r)
+	} else {
+		next.ServeHTTP(w, r)
+	}
+
+}
+
+func writeJsonError(w http.ResponseWriter, httpCode int, errMsg string) {
+	w.Header().Add("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(httpCode)
+	json.NewEncoder(w).Encode(map[string]any{
+		"message": errMsg,
+	})
 }
 
 func getToken(r *http.Request, name string) string {

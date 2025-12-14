@@ -28,7 +28,7 @@ func CreateRefreshToken(userId string) (string, error) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"sub": userId,
 		"iat": time.Now().Unix(),
-		"exp": time.Now().Add(1 * time.Minute).Unix(),
+		"exp": time.Now().Add(2 * time.Minute).Unix(),
 	})
 	return token.SignedString(secret)
 }
