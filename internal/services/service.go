@@ -54,6 +54,18 @@ func (s *Service) RegisterUser(ctx context.Context, reqBody models.User) (string
 	return userId, nil
 }
 
+func (s *Service) LoginUser(ctx context.Context, email, password string) (*models.User, error) {
+	user, err := s.db.GetUserByEmail(ctx, email)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get the user %v", err)
+	}
+	if user.Password != password {
+		return nil, fmt.Errorf("unauthorized access")
+	}
+
+	return user, nil
+}
+
 func (s *Service) GetServiceMux() *chi.Mux {
 	return s.router
 }
